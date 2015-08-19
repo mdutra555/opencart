@@ -88,10 +88,12 @@ CREATE TABLE IF NOT EXISTS `oc_user_login_log` (
   `user_login_log_id` int(11) NOT NULL AUTO_INCREMENT,
   `user_id` int(11) NOT NULL,
   `ip` varchar(15) COLLATE utf8_bin NOT NULL DEFAULT '',
+  `http_user_agent` char(72) COLLATE utf8_bin NOT NULL,
   `date_logged_in` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
   `date_logged_out` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
   PRIMARY KEY (`user_login_log_id`)
 ) ENGINE=MyISAM  DEFAULT CHARSET=utf8 COLLATE=utf8_bin AUTO_INCREMENT=1 ;
+
 
 -- --------------------------------------------------------
 --
