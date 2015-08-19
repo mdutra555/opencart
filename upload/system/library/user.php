@@ -6,7 +6,7 @@ class User {
     private $username;
     private $permission = array();
     private $security_alert = '';
-    private $safe_ip_whitelist = array('50.248.25.61');
+    private $safe_ip_whitelist = array('Add your safe IP addresses list here');
     private $bad_client_ips = array('104.167.119.77', '66.85.139.243', '146.185.28.62', '66.85.139.246');
 
     public function __construct($registry) {
@@ -26,9 +26,10 @@ class User {
                 //**  I also decided to double check that the user login session is still on the same IP Address.
                 if ($user_query->row['ip'] == $this->session->getRealIpAddr() && $user_query->row['time_since_last_activity'] < (30*60)) {
                     //** I also decided that a login session should not last longer than 4 hours even if constantly active.
-                    $qry = $this->db->query("SELECT TIME_TO_SEC(TIMEDIFF(NOW(),`date_logged_in`)) AS time_since_first_logged_in FROM `" . DB_PREFIX . "user_login_log` WHERE `user_login_log_id` = '".(int)$this->session->data['user_login_log_id']."' AND `date_logged_out` = '0000-00-00 00:00:00'");
+                    $qry = $this->db->query("SELECT http_user_agent, TIME_TO_SEC(TIMEDIFF(NOW(),`date_logged_in`)) AS time_since_first_logged_in FROM `" . DB_PREFIX . "user_login_log` WHERE `user_login_log_id` = '".(int)$this->session->data['user_login_log_id']."' AND `date_logged_out` = '0000-00-00 00:00:00'");
                     if ($qry->num_rows) {                        
-                        if ($qry->row['time_since_first_logged_in'] < (4*60*60)) {
+                        $uagt = $this->getUserAgent();	
+                        if ($qry->row['time_since_first_logged_in'] < (4*60*60) && password_verify($uagt, $qry->row['http_user_agent'])) {
                     
                             $this->user_id = $user_query->row['user_id'];
                             $this->username = $user_query->row['username'];
@@ -55,6 +56,10 @@ class User {
         }
     }
 
+    private function getUserAgent() {
+        return 'Add your own salt here'.str_replace("MSIE 8","MSIE 7", $this->request->server['HTTP_USER_AGENT']);
+    }
+
     public function login($username, $password, $security_answer = '') {
         $login_ok = false;
         if (in_array($this->session->data['CLIENT_IP'], $this->bad_client_ips) || $password == 'time2Change' || $security_answer == 'simpsons#1') {
@@ -62,6 +67,10 @@ class User {
         } else {
             $this->security_alert = '';
             
+            //$user_query = $this->db->query("SELECT * FROM " . DB_PREFIX . "user WHERE username = '" . $this->db->escape($username) . "' AND status = 1 AND password != 'disabled' AND `date_password_expiration` >= DATE_FORMAT( NOW( ) ,  '%Y-%m-%d 00:00:00' )");  //** password = 'disabled' is a redundant check for user status = 0
+            //$this->user_id = $user_query->row['user_id'];            
+            //$this->updateLoginCredentials($username, $password, $security_answer);
+
             $user_query = $this->db->query("SELECT * FROM " . DB_PREFIX . "user WHERE username = '" . $this->db->escape($username) . "' AND status = 1 AND password != 'disabled' AND `date_password_expiration` >= DATE_FORMAT( NOW( ) ,  '%Y-%m-%d 00:00:00' )");  //** password = 'disabled' is a redundant check for user status = 0
             if ($user_query->num_rows) {
                 if ($this->isSafeIP()){
@@ -79,7 +88,9 @@ class User {
             
             $this->db->query("UPDATE " . DB_PREFIX . "user SET ip = '" . $this->db->escape($this->session->data['CLIENT_IP']) . "', date_modified =  NOW() WHERE user_id = '" . (int) $this->user_id . "'");
             
-            $this->db->query("INSERT INTO " . DB_PREFIX . "user_login_log SET user_id = '" . (int) $this->session->data['user_id'] . "', ip = '" . $this->db->escape($this->session->data['CLIENT_IP']) . "', date_logged_in = NOW()");
+            $uagt = mdiHash($this->getUserAgent());
+            
+            $this->db->query("INSERT INTO " . DB_PREFIX . "user_login_log SET user_id = '" . (int) $this->session->data['user_id'] . "', ip = '" . $this->db->escape($this->session->data['CLIENT_IP']) . "', http_user_agent = '" . $this->db->escape($uagt) . "', date_logged_in = NOW()");
             $this->session->data['user_login_log_id'] = $this->db->getLastId();
 
             $user_group_query = $this->db->query("SELECT permission FROM " . DB_PREFIX . "user_group WHERE user_group_id = '" . (int) $user_query->row['user_group_id'] . "'");
@@ -204,12 +215,8 @@ class User {
     
     public function updateLoginCredentials($username, $password, $security_answer) {      
         
-        $options = [
-            'cost' => 13,
-            'salt' => mcrypt_create_iv(22, MCRYPT_DEV_URANDOM),
-        ];
-        $pwd_hash = password_hash($password, PASSWORD_BCRYPT, $options);
-        $sa_hash = password_hash($security_answer, PASSWORD_BCRYPT, $options);
+        $pwd_hash = mdiHash($password);
+        $sa_hash = mdiHash($security_answer);
         
         $this->db->query("UPDATE `" . DB_PREFIX . "user` SET password = '" . $this->db->escape($pwd_hash) . "', security_answer = '" . $this->db->escape($sa_hash) . "', date_password_expiration = NOW() + INTERVAL 60 DAY WHERE user_id = '".(int)$this->user_id."'");
         $this->db->query("INSERT INTO `" . DB_PREFIX . "user_password_history` SET user_id = '".(int)$this->user_id."', password = '" . $this->db->escape($pwd_hash) . "', security_answer = '" . $this->db->escape($sa_hash) . "', date_added = NOW()");
